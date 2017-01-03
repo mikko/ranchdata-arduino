@@ -1,135 +1,81 @@
-
 /*
-* Getting Started example sketch for nRF24L01+ radios
-* This is a very basic example of how to send data from one node to another
-* Updated: Dec 2014 by TMRh20
+   Dec 2014 - TMRh20 - Updated
+   Derived from examples by J. Coliz <maniacbug@ymail.com>
 */
-
 #include <SPI.h>
 #include "RF24.h"
+#include <printf.h>
+
+/*
+
+  ____  _____ ____ _____ _____     _______
+  |  _ \| ____/ ___| ____|_ _\ \   / / ____|
+  | |_) |  _|| |   |  _|  | | \ \ / /|  _|
+  |  _ <| |__| |___| |___ | |  \ V / | |___
+  |_| \_\_____\____|_____|___|  \_/  |_____|
+
+*/
 
 /* Hardware configuration: Set up nRF24L01 radio on SPI bus plus pins 7 & 8 */
-RF24 radio(7,8);
+RF24 radio(7, 8);
 /**********************************************************/
 
-byte addresses[][6] = {"1Node","2Node"};
+// Topology
+//uint64_t senderAddress = 0xF0F0F0F066;
+uint64_t livingRoomAddress = 0xF0F0F0F0AA;
+uint64_t saunaAddress = 0xF0F0F0F0AB;
+uint64_t fireplaceAddress = 0xF0F0F0F0AC;
+uint64_t heaterRoomAddress = 0xF0F0F0F0AD;
+
+/**
+  Create a data structure for transmitting and receiving data
+  This allows many variables to be easily sent and received in a single transmission
+  See http://www.cplusplus.com/doc/tutorial/structures/
+*/
+struct dataStruct {
+  float pressure;
+  float humidity;
+  float temperature;
+  char serial[12];
+} sensorData;
+
 
 void setup() {
-  Serial.begin(115200);
-  Serial.println(F("RF24/examples/GettingStarted"));
-  
+  Serial.begin(9600);
+  printf_begin();
+
+  //Serial.println(F("Radiotest Receiver starting"));
+
+  // Setup and configure radio
   radio.begin();
 
-  // Set the PA Level low to prevent power supply related issues since this is a
-  // getting_started sketch, and the likelihood of close proximity of the devices. RF24_PA_MAX is default.
   radio.setPALevel(RF24_PA_LOW);
-  
-  // Open a writing and reading pipe on each radio, with opposite addresses
-  if(radioNumber){
-    radio.openWritingPipe(addresses[1]);
-    radio.openReadingPipe(1,addresses[0]);
-  }else{
-    radio.openWritingPipe(addresses[0]);
-    radio.openReadingPipe(1,addresses[1]);
-  }
-  
-  // Start the radio listening for data
-  radio.startListening();
+
+  radio.openReadingPipe(1, livingRoomAddress);
+  radio.openReadingPipe(2, saunaAddress);
+  radio.openReadingPipe(3, fireplaceAddress);
+  radio.openReadingPipe(4, heaterRoomAddress);
+
+  radio.startListening();                       // Start listening
+
+  //radio.printDetails();
 }
+void loop(void) {
+  /****************** Pong Back Role ***************************/
+  byte pipeNo;                          // Declare variables for the pipe and the byte received
 
-void loop() {
-  
-  
-/****************** Ping Out Role ***************************/  
-if (role == 1)  {
-    
-    radio.stopListening();                                    // First, stop listening so we can talk.
-    
-    
-    Serial.println(F("Now sending"));
-
-    unsigned long start_time = micros();                             // Take the time, and send it.  This will block until complete
-     if (!radio.write( &start_time, sizeof(unsigned long) )){
-       Serial.println(F("failed"));
-     }
-        
-    radio.startListening();                                    // Now, continue listening
-    
-    unsigned long started_waiting_at = micros();               // Set up a timeout period, get the current microseconds
-    boolean timeout = false;                                   // Set up a variable to indicate if a response was received or not
-    
-    while ( ! radio.available() ){                             // While nothing is received
-      if (micros() - started_waiting_at > 200000 ){            // If waited longer than 200ms, indicate timeout and exit while loop
-          timeout = true;
-          break;
-      }      
-    }
-        
-    if ( timeout ){                                             // Describe the results
-        Serial.println(F("Failed, response timed out."));
-    }else{
-        unsigned long got_time;                                 // Grab the response, compare, and send to debugging spew
-        radio.read( &got_time, sizeof(unsigned long) );
-        unsigned long end_time = micros();
-        
-        // Spew it
-        Serial.print(F("Sent "));
-        Serial.print(start_time);
-        Serial.print(F(", Got response "));
-        Serial.print(got_time);
-        Serial.print(F(", Round-trip delay "));
-        Serial.print(end_time-start_time);
-        Serial.println(F(" microseconds"));
-    }
-
-    // Try again 1s later
-    delay(1000);
+  while ( radio.available(&pipeNo)) {            // Read all available payloads
+    radio.read(&sensorData, sizeof(sensorData));
+    //Serial.println(sensorData.temperature);
+    Serial.print("{");
+    Serial.print("\"temperature\":");
+    Serial.print(sensorData.temperature);
+    Serial.print(", \"pressure\":");
+    Serial.print(sensorData.pressure);
+    Serial.print(", \"humidity\":");
+    Serial.print(sensorData.humidity);
+    Serial.print(", \"sensor\": \"");
+    Serial.print(sensorData.serial);
+    Serial.println("\"}");
   }
-
-
-
-/****************** Pong Back Role ***************************/
-
-  if ( role == 0 )
-  {
-    unsigned long got_time;
-    
-    if( radio.available()){
-                                                                    // Variable for the received timestamp
-      while (radio.available()) {                                   // While there is data ready
-        radio.read( &got_time, sizeof(unsigned long) );             // Get the payload
-      }
-     
-      //radio.stopListening();                                        // First, stop listening so we can talk   
-      //radio.write( &got_time, sizeof(unsigned long) );              // Send the final one back.      
-      radio.startListening();                                       // Now, resume listening so we catch the next packets.     
-      Serial.print(F("Got message "));
-      Serial.println(got_time);  
-   }
- }
-
-
-
-
-/****************** Change Roles via Serial Commands ***************************/
-
-  if ( Serial.available() )
-  {
-    char c = toupper(Serial.read());
-    if ( c == 'T' && role == 0 ){      
-      Serial.println(F("*** CHANGING TO TRANSMIT ROLE -- PRESS 'R' TO SWITCH BACK"));
-      role = 1;                  // Become the primary transmitter (ping out)
-    
-   }else
-    if ( c == 'R' && role == 1 ){
-      Serial.println(F("*** CHANGING TO RECEIVE ROLE -- PRESS 'T' TO SWITCH BACK"));      
-       role = 0;                // Become the primary receiver (pong back)
-       radio.startListening();
-       
-    }
-  }
-
-
-} // Loop
-
-
+}
