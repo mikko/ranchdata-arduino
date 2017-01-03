@@ -18,7 +18,6 @@
 #include <Adafruit_BME280.h>
 #include "RF24.h"
 #include <printf.h>
-//#include <JeeLib.h>
 #include <LowPower.h>
 
 #define BME_SCK 13
@@ -40,8 +39,8 @@ RF24 radio(7, 8);
 /**********************************************************/
 
 // Topology
-uint64_t senderAddress = 0xF0F0F0F0AA;
-uint64_t receiverAddress = 0xF0F0F0F066;
+//uint64_t senderAddress = 0xF0F0F0F066;
+uint64_t myAddress = 0xF0F0F0F0AA;
 
 /**
 * Create a data structure for transmitting and receiving data
@@ -52,11 +51,12 @@ struct dataStruct{
   float pressure;
   float humidity;
   float temperature;
+  char serial[12];
 } sensorData;
 
 //ISR(WDT_vect) { Sleepy::watchdogEvent(); }
 
-int sleepMultiplier = 10; // 10 * 8 = 80 seconds
+int sleepMultiplier = 150; // 150 * 8 = (1200seconds) 20 min
 int rounds = sleepMultiplier + 1;
 
 void setup() {
@@ -69,71 +69,33 @@ void setup() {
     //Serial.println("Could not find a valid BME280 sensor, check wiring!");
     delay(1000);
   }
+  strncpy( sensorData.serial, "livingroom", sizeof(sensorData.serial)-1 );
 }
 
 void loop() {
-  
-  if( rounds > sleepMultiplier ) {
-    digitalWrite(POWER, HIGH);
+  digitalWrite(POWER, HIGH);
 
-    rounds = 0;
-    float temperature = bme.readTemperature();
-    float pressure = bme.readPressure() / 100.0F;
-    float altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
-    float humidity = bme.readHumidity();
-  
-    /*
-    Serial.print("{");
-    Serial.print("\"temperature\":");
-    Serial.print(temperature);
-    Serial.print(", \"pressure\":");
-    Serial.print(pressure);
-    Serial.print(", \"altitude\":");
-    Serial.print(altitude);
-    Serial.print(", \"humidity\":");
-    Serial.print(humidity);
-    Serial.println("}");
-  */
-    sensorData.pressure = pressure;
-    sensorData.humidity = humidity;
-    sensorData.temperature = temperature;
-  
-    restartRadio();
-  
-    radio.write(&sensorData, sizeof(sensorData));
-  
-    stopRadio();
-    
-    /*
-    Serial.print("Temperature = ");
-    Serial.print(bme.readTemperature());
-    Serial.println(" *C");
-  
-    Serial.print("Pressure = ");
-  
-    Serial.print(bme.readPressure() / 100.0F);
-    Serial.println(" hPa");
-  
-    Serial.print("Approx. Altitude = ");
-    Serial.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
-    Serial.println(" m");
-  
-    Serial.print("Humidity = ");
-    Serial.print(bme.readHumidity());
-    Serial.println(" %");
-  
-    Serial.println();
-    */
-    // Sleepy::loseSomeTime(60000);
-  }
-  else {
+  rounds = 0;
+  float temperature = bme.readTemperature();
+  float pressure = bme.readPressure() / 100.0F;
+  float altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+  float humidity = bme.readHumidity();
+
+  sensorData.pressure = pressure;
+  sensorData.humidity = humidity;
+  sensorData.temperature = temperature;
+
+  restartRadio();
+
+  radio.write(&sensorData, sizeof(sensorData));
+
+  stopRadio();
+  for(int i = 0; i < sleepMultiplier; ++i) {
     LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-    ++rounds;
   }
 }
 
 void stopRadio(){
-  
   radio.powerDown();
   /*
   pinMode(13, LOW);
@@ -145,15 +107,6 @@ void stopRadio(){
 }
 
 void restartRadio(){
-  /*
-  radio.begin(); // Start up the radio
-  radio.setChannel(CHANNEL);
-  radio.setAutoAck(1);     // Ensure autoACK is enabled
-  radio.setRetries(15,15); // Max delay between retries & number of retries
-  radio.openWritingPipe(pipe);
-  radio.stopListening();
-*/
-  
   // Setup and configure radio
   radio.begin();
 
@@ -161,13 +114,10 @@ void restartRadio(){
   //radio.enableAckPayload();                     // Allow optional ack payloads
   //radio.enableDynamicPayloads();                // Ack payloads are dynamic payloads
 
-  radio.openWritingPipe(receiverAddress);        // Both radios listen on the same pipes by default, but opposite addresses
+  radio.openWritingPipe(myAddress);        // Both radios listen on the same pipes by default, but opposite addresses
   //radio.openReadingPipe(1, senderAddress);     // Open a reading pipe on address 0, pipe 1
-
   //radio.startListening();                       // Start listening
-
   //radio.writeAckPayload(1, &counter, 1);        // Pre-load an ack-paylod into the FIFO buffer for pipe 1
   //radio.printDetails();
-  
 }
 
